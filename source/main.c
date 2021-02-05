@@ -70,6 +70,7 @@ _global font_t								g_font = {0};
 #define mat_id_acid (u8)13
 
 // Colors
+#define mat_col_empty_rect (color_t){ 20, 20, 20, 255}
 #define mat_col_empty (color_t){ 0, 0, 0, 0}
 #define mat_col_sand  (color_t){ 150, 100, 50, 255 }
 #define mat_col_salt  (color_t){ 200, 180, 190, 255 }
@@ -98,11 +99,13 @@ typedef enum material_selection
 	mat_sel_oil,
 	mat_sel_lava,
 	mat_sel_stone,
-	mat_sel_acid
+	mat_sel_acid,
+	mat_sel_empty
 } material_selection;
 
 // Material selection for "painting" / default to sand
-_global material_selection g_material_selection = mat_sel_sand;
+_global material_selection g_material_selection_l = mat_sel_sand;
+_global material_selection g_material_selection_r = mat_sel_empty;
 
 // World update processing structure
 _global u8* g_world_process_update_structure = {0};	// Every particle has id associated with it? Jeezuz...
@@ -875,7 +878,7 @@ font_glyph_t get_glyph( font_t* f, char c )
 	}
 }
 
-void putpixel( int x, int y ) {
+void putPixel( int x, int y ) {
 	if ( in_bounds( x, y ) ) {
 		g_ui_buffer[ compute_idx( x, y ) ] = (color_t){ 255, 255, 255, 255 };
 	}
@@ -883,25 +886,25 @@ void putpixel( int x, int y ) {
 
 // Function to put pixels 
 // at subsequence points 
-void drawCircle(int xc, int yc, int x, int y) 
+void drawCircle(int xc, int yc, int x, int y, void (*callOnPixel)() ) 
 { 
-    putpixel(xc+x, yc+y); 
-    putpixel(xc-x, yc+y); 
-    putpixel(xc+x, yc-y); 
-    putpixel(xc-x, yc-y); 
-    putpixel(xc+y, yc+x); 
-    putpixel(xc-y, yc+x); 
-    putpixel(xc+y, yc-x); 
-    putpixel(xc-y, yc-x); 
+    callOnPixel(xc+x, yc+y); 
+    callOnPixel(xc-x, yc+y); 
+    callOnPixel(xc+x, yc-y); 
+    callOnPixel(xc-x, yc-y); 
+    callOnPixel(xc+y, yc+x); 
+    callOnPixel(xc-y, yc+x); 
+    callOnPixel(xc+y, yc-x); 
+    callOnPixel(xc-y, yc-x); 
 }
 
 // Function for circle-generation 
 // using Bresenham's algorithm 
-void circleBres(int xc, int yc, int r) 
+void circleBres(int xc, int yc, int r, void (*callOnPixel())) 
 { 
     int x = 0, y = r; 
     int d = 3 - 2 * r; 
-    drawCircle(xc, yc, x, y); 
+    drawCircle(xc, yc, x, y, callOnPixel); 
     while (y >= x) 
     { 
         // For each pixel we will 
@@ -918,9 +921,116 @@ void circleBres(int xc, int yc, int r)
         } 
         else
             d = d + 4 * x + 6; 
-        drawCircle(xc, yc, x, y); 
+        drawCircle(xc, yc, x, y, callOnPixel); 
     } 
 } 
+
+void drawLine (int x0, int y0, int x1, int y1, void (*callOnPixel)())
+{
+  int dx =  abs (x1 - x0), sx = x0 < x1 ? 1 : -1;
+  int dy = -abs (y1 - y0), sy = y0 < y1 ? 1 : -1; 
+  int err = dx + dy, e2; /* error value e_xy */
+ 
+  for (;;){  /* loop */
+    callOnPixel (x0,y0);
+    if (x0 == x1 && y0 == y1) break;
+    e2 = 2 * err;
+    if (e2 >= dy) { err += dy; x0 += sx; } /* e_xy+e_x > 0 */
+    if (e2 <= dx) { err += dx; y0 += sy; } /* e_xy+e_y < 0 */
+  }
+}
+
+void drawFullCircle(int xc, int yc, int x, int y, void (*callOnPixel)() ) 
+{ 
+	drawLine(xc - x, yc + y, xc + x, yc + y, callOnPixel);
+	drawLine(xc - x, yc - y, xc + x, yc - y, callOnPixel);
+	drawLine(xc - y, yc + x, xc + y, yc + x, callOnPixel);
+	drawLine(xc - y, yc - x, xc + y, yc - x, callOnPixel);
+}
+
+// Function for circle-generation 
+// using Bresenham's algorithm 
+void circleFullBres(int xc, int yc, int r, void (*callOnPixel())) 
+{ 
+    int x = 0, y = r; 
+    int d = 3 - 2 * r; 
+    drawFullCircle(xc, yc, x, y, callOnPixel); 
+    while (y >= x) 
+    { 
+        // For each pixel we will 
+        // draw all eight pixels
+        x++; 
+  
+        // Check for decision parameter 
+        // and correspondingly  
+        // update d, x, y 
+        if (d > 0) 
+        { 
+            y--;  
+            d = d + 4 * (x - y) + 10; 
+        } 
+        else
+            d = d + 4 * x + 6; 
+        drawFullCircle(xc, yc, x, y, callOnPixel); 
+    } 
+} 
+
+void spawnParticle(u32 x, u32 y, void (*callOnPixel)()) {
+	particle_t p = {0};
+	switch ( g_material_selection_l ) {
+		case mat_sel_empty: p = particle_empty(); break;
+		case mat_sel_sand: p = particle_sand(); break;
+		case mat_sel_water: p = particle_water(); break;
+		case mat_sel_salt: p = particle_salt(); break;
+		case mat_sel_wood: p = particle_wood(); break;
+		case mat_sel_fire: p = particle_fire(); break;
+		case mat_sel_smoke: p = particle_smoke(); break;
+		case mat_sel_steam: p = particle_steam(); break;
+		case mat_sel_gunpowder: p = particle_gunpowder(); break;
+		case mat_sel_oil: p = particle_oil(); break;
+		case mat_sel_lava: p = particle_lava(); break;
+		case mat_sel_stone: p = particle_stone(); break;
+		case mat_sel_acid: p = particle_acid(); break;
+	}
+
+	s32 idx = y * (s32)g_texture_width + x;
+	u32 max_idx = (g_texture_width * g_texture_height) - 1;
+	idx = gs_clamp( idx, 0, max_idx );
+
+	if ( is_empty( x, y ) )
+	{
+		p.velocity = (gs_vec2){ random_val( -1, 1 ), random_val( -2, 5 ) };
+		write_data( idx, p );
+	}
+}
+
+void spawnParticleOver (u32 x, u32 y, void (*callOnPixel)()) {
+	particle_t p = {0};
+	switch ( g_material_selection_r ) {
+		case mat_sel_empty: p = particle_empty(); break;
+		case mat_sel_sand: p = particle_sand(); break;
+		case mat_sel_water: p = particle_water(); break;
+		case mat_sel_salt: p = particle_salt(); break;
+		case mat_sel_wood: p = particle_wood(); break;
+		case mat_sel_fire: p = particle_fire(); break;
+		case mat_sel_smoke: p = particle_smoke(); break;
+		case mat_sel_steam: p = particle_steam(); break;
+		case mat_sel_gunpowder: p = particle_gunpowder(); break;
+		case mat_sel_oil: p = particle_oil(); break;
+		case mat_sel_lava: p = particle_lava(); break;
+		case mat_sel_stone: p = particle_stone(); break;
+		case mat_sel_acid: p = particle_acid(); break;
+	}
+
+	s32 idx = y * (s32)g_texture_width + x;
+	u32 max_idx = (g_texture_width * g_texture_height) - 1;
+	idx = gs_clamp( idx, 0, max_idx );
+
+	p.velocity = (gs_vec2){ random_val( -1, 1 ), random_val( -2, 5 ) };
+	write_data( idx, p );
+}
+
+float brush_size_step = 2.f;
 
 void update_input()
 {
@@ -941,10 +1051,10 @@ void update_input()
 	f32 wx = 0, wy = 0;
 	platform->mouse_wheel( &wx, &wy );
 	if ( platform->key_pressed( gs_keycode_lbracket ) || wy < 0.f ) {
-		g_selection_radius = gs_clamp( g_selection_radius - 1.f, 1.f, 100.f );
+		g_selection_radius = gs_clamp( g_selection_radius - brush_size_step, 1.f, 100.f );
 	}
 	if ( platform->key_pressed( gs_keycode_rbracket ) || wy > 0.f ) {
-		g_selection_radius = gs_clamp( g_selection_radius + 1.f, 1.f, 100.f );
+		g_selection_radius = gs_clamp( g_selection_radius + brush_size_step, 1.f, 100.f );
 	}
 
 	if ( platform->key_pressed( gs_keycode_p ) ) {
@@ -967,65 +1077,20 @@ void update_input()
 		s32 r_amt = random_val( 1, 10000 );
 		const f32 R = g_selection_radius;
 
-		// Spawn in a circle around the mouse
-		for ( u32 i = 0; i < r_amt; ++i )
-		{
-			f32 ran = (f32)random_val(0, 100) / 100.f;
-			f32 r = R * sqrt(ran);
-			f32 theta = (f32)random_val(0, 100)/100.f * 2.f * gs_pi;
-			f32 rx = cos((f32)theta) * r;
-			f32 ry = sin((f32)theta) * r;
-			s32 mpx = (s32)gs_clamp( mp_x + (f32)rx, 0.f, (f32)g_texture_width - 1.f );
-			s32 mpy = (s32)gs_clamp( mp_y + (f32)ry, 0.f, (f32)g_texture_height - 1.f );
-			s32 idx = mpy * (s32)g_texture_width + mpx;
-			idx = gs_clamp( idx, 0, max_idx );
-
-			if ( is_empty( mpx, mpy ) )
-			{
-				particle_t p = {0};
-				switch ( g_material_selection ) {
-					case mat_sel_sand: p = particle_sand(); break;;
-					case mat_sel_water: p = particle_water(); break;;
-					case mat_sel_salt: p = particle_salt(); break;;
-					case mat_sel_wood: p = particle_wood(); break;;
-					case mat_sel_fire: p = particle_fire(); break;
-					case mat_sel_smoke: p = particle_smoke(); break;
-					case mat_sel_steam: p = particle_steam(); break;
-					case mat_sel_gunpowder: p = particle_gunpowder(); break;
-					case mat_sel_oil: p = particle_oil(); break;
-					case mat_sel_lava: p = particle_lava(); break;
-					case mat_sel_stone: p = particle_stone(); break;
-					case mat_sel_acid: p = particle_acid(); break;
-				}
-				p.velocity = (gs_vec2){ random_val( -1, 1 ), random_val( -2, 5 ) };
-				write_data( idx, p );
-			}
-		}
+		circleFullBres((u32) mp_x, (u32) mp_y, R, &spawnParticle);
 	}
 
 	// Solid Erase
 	if (  platform->mouse_down( gs_mouse_rbutton ) )
 	{
-		gs_vec2 mp = calculate_mouse_position( );
+		gs_vec2 mp = calculate_mouse_position();
 		f32 mp_x = gs_clamp( mp.x, 0.f, (f32)g_texture_width - 1.f );	
 		f32 mp_y = gs_clamp( mp.y, 0.f, (f32)g_texture_height - 1.f );
 		u32 max_idx = (g_texture_width * g_texture_height) - 1;
+		s32 r_amt = random_val( 1, 10000 );
 		const f32 R = g_selection_radius;
-
-		// Erase in a circle pattern
-		for ( s32 i = -R ; i < R; ++i )
-		{
-			for ( s32 j = -R ; j < R; ++j )
-			{
-				s32 rx = ((s32)mp_x + j); 
-				s32 ry = ((s32)mp_y + i);
-				gs_vec2 r = (gs_vec2){ rx, ry };
-
-				if ( in_bounds( rx, ry ) && gs_vec2_dist( mp, r ) <= R ) {
-					write_data( compute_idx( rx, ry ), particle_empty() );
-				}
-			}
-		}
+			
+		circleFullBres((u32) mp_x, (u32) mp_y, R, &spawnParticleOver);
 	}
 
 	// Need to detect if mouse has entered the screen with payload...
@@ -1136,7 +1201,7 @@ b32 in_rect ( gs_vec2 p, gs_vec2 ro, gs_vec2 rd )
 	return true;
 }
 
-b32 gui_rect( color_t* buffer, s32 _x, s32 _y, s32 _w, s32 _h, color_t c ) 
+b32 gui_rect( color_t* buffer, s32 _x, s32 _y, s32 _w, s32 _h, color_t c, gs_result mouse_button ) 
 {
 	gs_vec2 mp = calculate_mouse_position();
 
@@ -1150,16 +1215,20 @@ b32 gui_rect( color_t* buffer, s32 _x, s32 _y, s32 _w, s32 _h, color_t c )
 		}
 	}
 
-	b32 clicked = gs_engine_instance()->ctx.platform->mouse_pressed( gs_mouse_lbutton );
+	b32 clicked = gs_engine_instance()->ctx.platform->mouse_pressed( mouse_button );
 
 	return in_rect( mp, (gs_vec2){ _x, _y }, (gs_vec2){ _w, _h } ) && clicked ; 
 }
 
 #define __gui_interaction( x, y, w, h, c, str, id )\
 do {\
-	if ( (id) == g_material_selection ) {\
+	if ( (id) == g_material_selection_l ) {\
 		const s32 b = 2;\
-		gui_rect( g_ui_buffer, x - b / 2, y - b / 2, w + b, h + b, (color_t){ 200, 150, 20, 255 } );\
+		gui_rect( g_ui_buffer, x - b / 2, y - b / 2, w + b, h + b, (color_t){ 200, 150, 20, 255 }, gs_mouse_lbutton );\
+	}\
+	if ( (id) == g_material_selection_r ) {\
+		const s32 b = 2;\
+		gui_rect( g_ui_buffer, x - b / 2, y - b / 2, w + b, h + b, (color_t){ 200, 150, 20, 255 }, gs_mouse_rbutton );\
 	}\
 	gs_vec2 mp = calculate_mouse_position();\
 	if ( in_rect( mp, (gs_vec2){ (x), (y) }, (gs_vec2){ (w), (h) })) {\
@@ -1169,12 +1238,16 @@ do {\
 		color_t s_col = (color_t){ 10, 10, 10, 255 };\
 		color_t r_col = (color_t){ 5, 5, 5, 170 };\
 		/*Draw rect around text as well for easier viewing*/\
-		gui_rect(g_ui_buffer, g_texture_width / 2 - 50, 15, 100, 20, r_col);\
+		gui_rect(g_ui_buffer, g_texture_width / 2 - 50, 15, 100, 20, r_col, gs_mouse_lbutton);\
+		gui_rect(g_ui_buffer, g_texture_width / 2 - 50, 15, 100, 20, r_col, gs_mouse_rbutton);\
 		draw_string_at(&g_font, g_ui_buffer, g_texture_width / 2 + 1 - (sizeof(str) * 5) / 2, 20 - 1, _str, sizeof(_str), s_col);\
 		draw_string_at(&g_font, g_ui_buffer, g_texture_width / 2 - (sizeof(str) * 5) / 2, 20, _str, sizeof(_str), col);\
 	}\
-	if ( gui_rect( g_ui_buffer, x, y, w, h, c ) ) {\
-		g_material_selection = id;\
+	if ( gui_rect( g_ui_buffer, x, y, w, h, c, gs_mouse_lbutton ) ) {\
+		g_material_selection_l = id;\
+	}\
+	if ( gui_rect( g_ui_buffer, x, y, w, h, c, gs_mouse_rbutton ) ) {\
+		g_material_selection_r = id;\
 	}\
 } while ( 0 )
 
@@ -1198,18 +1271,19 @@ b32 update_ui()
 		s32 base = 10;
 
 		// Sand Selection
-		__gui_interaction(g_texture_width - xoff, base + offset * 0, 10, 10, mat_col_sand, "Sand", mat_sel_sand );
-		__gui_interaction(g_texture_width - xoff, base + offset * 1, 10, 10, mat_col_water, "Water", mat_sel_water );
-		__gui_interaction(g_texture_width - xoff, base + offset * 2, 10, 10, mat_col_smoke, "Smoke", mat_sel_smoke );
-		__gui_interaction(g_texture_width - xoff, base + offset * 3, 10, 10, mat_col_fire, "Fire", mat_sel_fire );
-		__gui_interaction(g_texture_width - xoff, base + offset * 4, 10, 10, mat_col_steam, "Steam", mat_sel_steam );
-		__gui_interaction(g_texture_width - xoff, base + offset * 5, 10, 10, mat_col_oil, "Oil", mat_sel_oil );
-		__gui_interaction(g_texture_width - xoff, base + offset * 6, 10, 10, mat_col_salt, "Salt", mat_sel_salt );
-		__gui_interaction(g_texture_width - xoff, base + offset * 7, 10, 10, mat_col_wood, "Wood", mat_sel_wood );
-		__gui_interaction(g_texture_width - xoff, base + offset * 8, 10, 10, mat_col_stone, "Stone", mat_sel_stone );
-		__gui_interaction(g_texture_width - xoff, base + offset * 9, 10, 10, mat_col_lava, "Lava", mat_sel_lava );
-		__gui_interaction(g_texture_width - xoff, base + offset * 10, 10, 10, mat_col_gunpowder, "GunPowder", mat_sel_gunpowder );
-		__gui_interaction(g_texture_width - xoff, base + offset * 11, 10, 10, mat_col_acid, "Acid", mat_sel_acid );
+		__gui_interaction(g_texture_width - xoff, base + offset * 0, 10, 10, mat_col_empty_rect, "Empty", mat_sel_empty);
+		__gui_interaction(g_texture_width - xoff, base + offset * 1, 10, 10, mat_col_sand, "Sand", mat_sel_sand );
+		__gui_interaction(g_texture_width - xoff, base + offset * 2, 10, 10, mat_col_water, "Water", mat_sel_water );
+		__gui_interaction(g_texture_width - xoff, base + offset * 3, 10, 10, mat_col_smoke, "Smoke", mat_sel_smoke );
+		__gui_interaction(g_texture_width - xoff, base + offset * 4, 10, 10, mat_col_fire, "Fire", mat_sel_fire );
+		__gui_interaction(g_texture_width - xoff, base + offset * 5, 10, 10, mat_col_steam, "Steam", mat_sel_steam );
+		__gui_interaction(g_texture_width - xoff, base + offset * 6, 10, 10, mat_col_oil, "Oil", mat_sel_oil );
+		__gui_interaction(g_texture_width - xoff, base + offset * 7, 10, 10, mat_col_salt, "Salt", mat_sel_salt );
+		__gui_interaction(g_texture_width - xoff, base + offset * 8, 10, 10, mat_col_wood, "Wood", mat_sel_wood );
+		__gui_interaction(g_texture_width - xoff, base + offset * 9, 10, 10, mat_col_stone, "Stone", mat_sel_stone );
+		__gui_interaction(g_texture_width - xoff, base + offset * 10, 10, 10, mat_col_lava, "Lava", mat_sel_lava );
+		__gui_interaction(g_texture_width - xoff, base + offset * 11, 10, 10, mat_col_gunpowder, "GunPowder", mat_sel_gunpowder );
+		__gui_interaction(g_texture_width - xoff, base + offset * 12, 10, 10, mat_col_acid, "Acid", mat_sel_acid );
 	}
 
 	if ( g_show_frame_count ) {
@@ -1225,7 +1299,7 @@ b32 update_ui()
 
 	// Draw circle around mouse pointer
 	s32 R = g_selection_radius;
-	circleBres((s32)mp.x, (s32)mp.y, R); 
+	circleBres((s32)mp.x, (s32)mp.y, R, putPixel); 
 
 	// Upload our updated texture data to GPU
 	gs_texture_parameter_desc t_desc = gs_texture_parameter_desc_default();
