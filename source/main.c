@@ -558,7 +558,7 @@ void drop_file_callback( void* platform_window, s32 count, const char** file_pat
 			// Not sure what the format should be, so this is ...blah. Need to find a way to determine this beforehand.
 			u8* data = (u8*)texture_data;
 
-			s32 sx = ( g_texture_width - _w ) / 2;
+			s32 sx = ( g_texture_width - _w );
 			s32 sy = ( g_texture_height - _h ) / 2;
 
 			// Now we need to process the data and place it into our particle/color buffers
@@ -1035,6 +1035,41 @@ float brush_size_step = 2.f;
 void update_input()
 {
 	gs_platform_i* platform = gs_engine_instance()->ctx.platform;
+	if ( platform->key_pressed( gs_keycode_one ) ) {
+		g_selection_radius =  1.f;
+	}
+
+	if ( platform->key_pressed( gs_keycode_two ) ) {
+		g_selection_radius =  2.f;
+	}
+
+	if ( platform->key_pressed( gs_keycode_three ) ) {
+		g_selection_radius =  3.f;
+	}
+
+	if ( platform->key_pressed( gs_keycode_four ) ) {
+		g_selection_radius =  5.f;
+	}
+
+	if ( platform->key_pressed( gs_keycode_five ) ) {
+		g_selection_radius =  8.f;
+	}
+
+	if ( platform->key_pressed( gs_keycode_six ) ) {
+		g_selection_radius =  13.f;
+	}
+
+	if ( platform->key_pressed( gs_keycode_seven ) ) {
+		g_selection_radius =  21.f;
+	}
+
+	if ( platform->key_pressed( gs_keycode_eight ) ) {
+		g_selection_radius =  44.f;
+	}
+
+	if ( platform->key_pressed( gs_keycode_nine ) ) {
+		g_selection_radius =  65.f;
+	}
 
 	if ( platform->key_pressed( gs_keycode_i ) ) {
 		g_show_material_selection_panel = !g_show_material_selection_panel;
@@ -1408,10 +1443,8 @@ void render_scene()
 
 		// Draw final composited image
 		if (g_use_post_processing) {
-
 			gfx->bind_texture( g_cb, u_tex, g_composite_pass.data.render_target, 0 );
 		} else {
-
 			gfx->bind_texture( g_cb, u_tex, g_rt, 0 );
 		}
 		gfx->draw_indexed( g_cb, 6 );
